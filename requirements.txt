@@ -5,3 +5,5 @@ joblib
 numpy
 pydantic
 shap
+xgboost
+lightgbm

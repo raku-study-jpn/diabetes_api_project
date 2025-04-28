@@ -5,14 +5,22 @@ from pydantic import BaseModel
 import joblib
 import numpy as np
 
-# モデルとSHAP explainerをロード
-model = joblib.load("model.pkl")
-explainer = joblib.load("shap_explainer.pkl")
-
-# FastAPIアプリ生成
+# FastAPIインスタンス作成
 app = FastAPI()
 
-# 入力データ型の定義
+# モデルとSHAP explainerをロード
+model = joblib.load("model.pkl")
+
+# 🔥 日本語カラム名マッピング
+feature_name_mapping = {
+    "GenHlth": "自覚的健康状態",
+    "HighBP": "高血圧の有無",
+    "Age": "年齢区分",
+    "BMI": "体格指数（BMI）",
+    "HighChol": "高コレステロールの有無"
+}
+
+# リクエストデータ用モデル
 class InputData(BaseModel):
     HighBP: int
     HighChol: int
@@ -36,46 +44,34 @@ class InputData(BaseModel):
     Education: int
     Income: int
 
-# 特徴量名リスト
-feature_names = [
-    'HighBP', 'HighChol', 'CholCheck', 'BMI', 'Smoker', 'Stroke', 'HeartDiseaseorAttack',
-    'PhysActivity', 'Fruits', 'Veggies', 'HvyAlcoholConsump', 'AnyHealthcare', 'NoDocbcCost',
-    'GenHlth', 'MentHlth', 'PhysHlth', 'DiffWalk', 'Sex', 'Age', 'Education', 'Income'
-]
-
 # 予測エンドポイント
 @app.post("/predict")
 def predict(data: InputData):
-    input_array = np.array([[getattr(data, feature) for feature in feature_names]])
+    # 入力データをnumpy配列に変換
+    input_array = np.array([[getattr(data, field) for field in data.__fields__]])
 
     # 予測
-    pred_proba = model.predict_proba(input_array)[0, 1]
-    prediction = int(pred_proba >= 0.3)
+    pred_proba = model.predict_proba(input_array)[0][1]
+    pred_label = model.predict(input_array)[0]
 
-    # SHAP値計算
-    shap_values = explainer.shap_values(input_array)
-    shap_contributions = shap_values[0]
+    # メッセージ生成
+    if pred_label == 1:
+        advice_message = f"""糖尿病予備軍または糖尿病のリスクが高い傾向が見られました。
+特に以下の要素がリスクに関与している可能性があります：
 
-    # 上位寄与特徴量（大きい順に3つ出す）
-    top_features_idx = np.argsort(-np.abs(shap_contributions))[:3]
-    top_features = [(feature_names[i], shap_contributions[i]) for i in top_features_idx]
+- {feature_name_mapping['GenHlth']}: 自覚的健康状態が良くない可能性（1=最高、5=最低）
+- {feature_name_mapping['HighBP']}: 高血圧がある場合はリスク上昇
+- {feature_name_mapping['Age']}: 年齢が高くなるほどリスク上昇
+- {feature_name_mapping['BMI']}: BMI（体格指数）が高い場合はリスク上昇（25以上で要注意）
+- {feature_name_mapping['HighChol']}: 高コレステロールがある場合はリスク上昇
 
-    # 改善アドバイス作成（例）
-    advice = []
-    for feature, value in top_features:
-        if feature == "BMI" and input_array[0][feature_names.index("BMI")] > 25:
-            advice.append("体重管理（BMI低下）を意識しましょう")
-        elif feature == "Smoker" and input_array[0][feature_names.index("Smoker")] == 1:
-            advice.append("禁煙を検討しましょう")
-        elif feature == "PhysActivity" and input_array[0][feature_names.index("PhysActivity")] == 0:
-            advice.append("適度な運動を始めましょう")
-        elif feature == "GenHlth":
-            advice.append("健康状態の改善（睡眠・食事習慣）を意識しましょう")
-        # 必要ならさらに条件を追加できる！
+➡ 生活習慣（運動、食事、体重管理）、血圧・コレステロールの管理に取り組み、必要に応じて専門医にご相談ください。
+"""
+    else:
+        advice_message = "現在のところ糖尿病リスクは高くないと推測されますが、引き続き健康管理に努めましょう。"
 
     return {
-        "diabetes_risk": f"{pred_proba:.2f}",
-        "predicted_label": prediction,
-        "top_features": [{"feature": f, "shap_value": round(v, 4)} for f, v in top_features],
-        "advice": advice
+        "prediction": int(pred_label),
+        "probability": float(pred_proba),
+        "advice": advice_message
     }

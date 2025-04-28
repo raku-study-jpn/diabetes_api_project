@@ -8,6 +8,19 @@ import numpy as np
 # FastAPIインスタンス作成
 app = FastAPI()
 
+# --- ここを追加 ---
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 本番は ["https://raku-study.com"] 推奨
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# --- ここまで追加 ---
+
+
 # モデルとSHAP explainerをロード
 model = joblib.load("model.pkl")
 

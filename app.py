@@ -54,7 +54,7 @@ def predict(data: InputData):
 
     # SHAP値計算
     shap_values = explainer.shap_values(input_array)
-    shap_contributions = shap_values[1][0]  # [1]=positiveクラス方向
+    shap_contributions = shap_values[0]
 
     # 上位寄与特徴量（大きい順に3つ出す）
     top_features_idx = np.argsort(-np.abs(shap_contributions))[:3]
